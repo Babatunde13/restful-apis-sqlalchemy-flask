@@ -1,4 +1,5 @@
 from app import db
+from werkzeug.security import check_password_hash, generate_password_hash
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, index=True)
@@ -7,9 +8,17 @@ class User(db.Model):
     public_id = db.Column(db.String, nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
     todos=db.relationship('Todo', backref='owner', lazy='dynamic')
+    password= db.Column(db.String(120), nullable=False)
 
-    def get_user(self, id):
-      return User.query.get(id).first()
+    def set_password(self, password):
+      self.password = generate_password_hash(password)
+
+    def check_password(self, password):
+      return check_password_hash(self.password, password)
+
+    @staticmethod
+    def get_user(id):
+      return User.query.get(int(id))
     
     def get_json(self):
       return{
@@ -31,6 +40,7 @@ class Todo(db.Model):
     def get_json(self):
       return { 
         'id': self.public_id, 'name': self.name,
+        'completed': self.is_completed,
         'owner': {
           'name': self.owner.name,
           'email': self.owner.email,

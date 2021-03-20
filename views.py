@@ -1,16 +1,19 @@
-from flask import jsonify, request
-import uuid
+from flask import jsonify, request, redirect
+import uuid, jwt
 from  app import app, db, token_required, admin_required
 from models import User, Todo
 
-DOC_URI=''
+DOC_URI='https://documenter.getpostman.com/view/11853513/Tz5wVDgr'
 
 @app.route('/')
 def home():
 	return {
-		'message': 'Welcome to building RESTful APIs with Flask and SQLAlchemy, you an click on this link to check the docs'+DOC_URI
+		'message': 'Welcome to building RESTful APIs with Flask and SQLAlchemy, you an click on this link to check the docs at '+DOC_URI
 	}
 
+@app.route('/docs/')
+def docs():
+	return redirect('https://documenter.getpostman.com/view/11853513/Tz5wVDgr')
 
 @app.route('/users/')
 @token_required
@@ -20,7 +23,7 @@ def get_users(current_user):
 		user.get_json() for user in User.query.all()
 	])
 		
-@app.route('/users/')
+@app.route('/users/me/')
 @token_required
 def get_user(current_user: User):
 	return current_user.get_json()
@@ -28,10 +31,10 @@ def get_user(current_user: User):
 @app.route('/users/', methods=['POST'])
 def create_user():
 	data = request.get_json()
-	if not 'name' in data or not 'email' in data:
+	if not 'name' in data or not 'email' in data or 'password' not in data:
 		return jsonify({
 			'error': 'Bad Request',
-			'message': 'Name or email not given'
+			'message': 'Name, email or password not given'
 		}), 400
 	if len(data['name']) < 4 or len(data['email']) < 6:
 		return jsonify({
@@ -44,21 +47,51 @@ def create_user():
 			is_admin=data.get('is admin', False),
 			public_id=str(uuid.uuid4())
 		)
+	u.set_password(data['password'])
 	db.session.add(u)
 	db.session.commit()
 	return u.get_json(), 201
+
+@app.route('/users/token/', methods=['POST'])
+def get_token():
+	try:
+		data = request.get_json()
+		if 'email' not in data or 'password' not in data:
+				return {
+						'error': 'Invalid data',
+						'message': 'email and password must be present.'
+				}, 400
+		u = User.query.filter_by(email=data['email']).first()
+		if not u or not u.check_password(data['password']):
+				return {
+						'error': 'Invalid Data',
+						'message': 'invalid email or password'
+				}, 401
+		try:
+			token = jwt.encode(
+				{'user_id': str(u.id)},
+				app.config['SECRET_KEY']
+			)
+			return {
+					'token': token
+			}, 200
+		except Exception as e:
+			return {
+				'error': 'Sonething went wrong',
+				'message': str(e)
+			}, 500
+	except Exception as e:
+		return {
+			'error': 'Bad data',
+			'message': str(e)
+		}, 400 
 
 @app.route('/users/', methods=['PUT'])
 @token_required
 def update_user(current_user):
 	data = request.get_json()
-	if 'name' not in data:
-		return {
-			'error': 'Bad Request',
-			'message': 'Name field needs to be present'
-		}, 400
-	current_user.name=data['name']
-	if 'is admin' in data:
+	current_user.name=data.get('name', current_user.name)
+	if 'admin' in data:
 		current_user.is_admin=data['admin']
 	db.session.commit()
 	return jsonify(current_user.get_json())
@@ -72,7 +105,7 @@ def delete_user(current_user):
 		'success': 'User deleted successfully'
 	}
 
-@app.route('/todos/')
+@app.route('/users/todos/')
 @token_required
 @admin_required
 def get_todos(current_user):
@@ -80,7 +113,7 @@ def get_todos(current_user):
 		todo.get_json() for todo in Todo.query.all()
 	])
 
-@app.route('/todos/<id>')
+@app.route('/users/todos/<id>/')
 @token_required
 def get_todo(current_user, id):
 	todo: Todo = Todo.query.filter_by(public_id=id).first_or_404()
@@ -91,7 +124,7 @@ def get_todo(current_user, id):
 		}, 403
 	return jsonify(todo.get_json())
 
-@app.route('/todos/', methods=['POST'])
+@app.route('/users/todos/', methods=['POST'])
 @token_required
 def create_todo(current_user: User):
 	data = request.get_json()
@@ -115,12 +148,11 @@ def create_todo(current_user: User):
 	db.session.commit()
 	return todo.get_json(), 201
 
-@app.route('/todos/<id>/', methods=['PUT'])
+@app.route('/users/todos/<id>/', methods=['PUT'])
 @token_required
 def update_todo(current_user, id):
 	data = request.get_json()
-	print('is completed' in data)
-	if not 'name' in data or not 'completed' in data:
+	if not data.get('name') and not  data.get('completed'):
 		return {
 			'error': 'Bad Request',
 			'message': 'Name or completed fields need to be present'
@@ -132,12 +164,11 @@ def update_todo(current_user, id):
 			'message': 'You don\'t have access to that todo'
 		}, 403
 	todo.name=data.get('name', todo.name)
-	if 'is completed' in data:
-		todo.is_completed=data['is completed']
+	todo.is_completed=data.get('completed', False)
 	db.session.commit()
 	return todo.get_json(), 201
 
-@app.route('/todos/<id>/', methods=['DELETE'] )
+@app.route('/users/todos/<id>/', methods=['DELETE'] )
 @token_required
 def delete_todo(current_user, id):
 	todo = Todo.query.filter_by(public_id=id).first_or_404()

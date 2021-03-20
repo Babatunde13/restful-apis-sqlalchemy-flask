@@ -27,8 +27,8 @@ def token_required(f):
                 'message': 'You are not signed in'
                 }), 403
         try:
-            data=jwt.decode(token, app.config['SECRET_KEY'])
-            current_user=User().get_user(data['user']['_id'])
+            data=jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            current_user=User.get_user(data['user_id'])
         except Exception as e:
             return jsonify({
                 'error': 'Something went wrong',
@@ -42,7 +42,7 @@ def token_required(f):
 def admin_required(f):
 	@wraps(f)
 	def decorated(current_user: User, *args, **kwargs):
-		if not current_user.is_admin:
+		if current_user and not current_user.is_admin:
 			return jsonify({
 				'error': 'Forbidden',
 				'message': 'You need to be an admin to make this request!'
